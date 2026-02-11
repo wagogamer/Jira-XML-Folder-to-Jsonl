@@ -104,7 +104,7 @@ When the script asks for the output file:
 ## Project structure
 
 ```
-.<br>
+.
 ├── jira_xml_folder_to_jsonl.py
 ├── en.json
 ├── pt-BR.json
@@ -135,4 +135,31 @@ For embeddings/retrieval, index the text field.
      - enable `--include-customfields`
      - consider also embedding `description_text` and `comments_text`
 2. If you need “lossless” storage, enable `--include-raw-item-xml`.
+
+# Troubleshooting
+
+## “No *.xml files found”
+
+- Make sure files end with `.xml`
+- Confirm the folder path
+- Try `--recursive` if XML files are in subfolders
+
+## “XML is not RSS”
+
+- Your file is not the Jira RSS export format. Confirm it contains `<rss><channel><item>...`.
+
+## “My agent can’t retrieve content”
+
+Usually the ingestion pipeline embeds the wrong field.
+
+- Ensure you embed `text`
+- Keep 1 issue = 1 document (JSONL already does this)
+
+# Language / i18n
+
+UI strings live in:
+- en.json
+- pt-BR.json
+
+You can add more languages by creating a new JSON and wiring it in the script.
 
