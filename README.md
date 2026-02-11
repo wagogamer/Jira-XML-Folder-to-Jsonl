@@ -104,12 +104,12 @@ When the script asks for the output file:
 ## Project structure
 
 ´´´
-.
-├── jira_xml_folder_to_jsonl.py
-├── en.json
-├── pt-BR.json
-├── README.md
-└── LICENSE
+.<br>
+├── jira_xml_folder_to_jsonl.py<br>
+├── en.json<br>
+├── pt-BR.json<br>
+├── README.md<br>
+└── LICENSE<br>
 ´´´
 
 ## Input XML format
@@ -131,7 +131,8 @@ When the script asks for the output file:
 
 For embeddings/retrieval, index the text field.
 
-- If recall is low:
--- enable `--include-customfields`
--- consider also embedding `description_text` and `comments_text`
-- If you need “lossless” storage, enable `--include-raw-item-xml`.
+1. If recall is low:
+     - enable `--include-customfields`
+     - consider also embedding `description_text` and `comments_text`
+2. If you need “lossless” storage, enable `--include-raw-item-xml`.
+
