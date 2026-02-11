@@ -131,7 +131,7 @@ When the script asks for the output file:
 
 For embeddings/retrieval, index the text field.
 
--If recall is low:
+- If recall is low:
 -- enable `--include-customfields`
 -- consider also embedding `description_text` and `comments_text`
--If you need “lossless” storage, enable `--include-raw-item-xml`.
+- If you need “lossless” storage, enable `--include-raw-item-xml`.
