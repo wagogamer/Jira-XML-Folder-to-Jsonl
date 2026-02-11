@@ -93,3 +93,45 @@ Common fields:
 - `text` (main field for search/embeddings)
 
 > JSONL is not “pretty” by design. Use --beautify to also get a readable .pretty.json.
+
+## Important output filename rule
+
+When the script asks for the output file:
+
+- If you type agent_ready.jsonl → it creates with extension.
+- If you type only agent_ready → it creates without an extension.
+
+## Project structure
+
+´´´
+.
+├── jira_xml_folder_to_jsonl.py
+├── en.json
+├── pt-BR.json
+├── README.md
+└── LICENSE
+´´´
+
+## Input XML format
+
+´´´ xml
+<rss>
+  <channel>
+    <item>
+      <key>ABC-123</key>
+      <summary>...</summary>
+      <description><![CDATA[<p>...</p>]]></description>
+      ...
+    </item>
+  </channel>
+</rss>
+´´´
+
+## RAG / AI Agent tips
+
+For embeddings/retrieval, index the text field.
+
+-If recall is low:
+-- enable `--include-customfields`
+-- consider also embedding `description_text` and `comments_text`
+-If you need “lossless” storage, enable `--include-raw-item-xml`.
