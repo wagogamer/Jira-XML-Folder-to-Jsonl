@@ -105,11 +105,11 @@ When the script asks for the output file:
 
 ```
 .<br>
-├── jira_xml_folder_to_jsonl.py<br>
-├── en.json<br>
-├── pt-BR.json<br>
-├── README.md<br>
-└── LICENSE<br>
+├── jira_xml_folder_to_jsonl.py
+├── en.json
+├── pt-BR.json
+├── README.md
+└── LICENSE
 ```
 
 ## Input XML format
