@@ -32,9 +32,29 @@ cd Jira-XML-Folder-to-Jsonl
 python3 jira_xml_folder_to_jsonl.py
 ```
 
-**Run with flags**
+##Run with flags
 
 ```python
-python3 jira_xml_folder_to_jsonl.py ./exports agent_ready.jsonl \
+python jira_xml_folder_to_jsonl.py ./exports agent_ready.jsonl \
   --recursive --sort --include-customfields --beautify --lang en
-}
+```
+
+---
+
+## Usage
+
+##Interactive mode (recommended)
+Run without arguments:
+
+```python
+python jira_xml_folder_to_jsonl.py
+```
+
+It will ask:
+
+- UI language (en / pt-BR)
+- Input folder (where *.xml are)
+- Output file path (JSONL)
+- Options: recursive, sort, customfields, raw XML, beautify
+
+> Tip: you can paste paths with quotes or drag & drop folders into the terminal.
