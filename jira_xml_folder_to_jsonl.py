@@ -2,16 +2,18 @@
 # file: jira_xml_folder_to_jsonl.py
 
 """
-Jira RSS XML folder -> Agent-ready JSONL (1 issue per line), cleaned for search.
+JIRA XML ➜ JSONL (Agent-ready)
 
-- Reads Jira RSS exports: <rss><channel><item>...</item></channel></rss>
-- Produces JSONL where each line is one issue (good for embeddings/RAG).
-- Cleans HTML from description/comments.
-- Optional: includes customfields and/or raw_item_xml.
-- Optional: beautify generates an extra .pretty.json (indented) for reading.
+Converts a folder of Jira RSS XML exports (<rss><channel><item>...) into JSONL (1 issue per line),
+cleaned for search (RAG/embeddings). Includes an interactive, colored CLI and bilingual UI (en, pt-BR).
 
-Interactive mode: run without args.
-CLI mode: pass args normally.
+Outputs:
+- JSONL (always): one JSON object per line (best for ingestion)
+- Pretty JSON (optional): <output>.pretty.json (indented array) for reading/debug
+
+Notes:
+- JSONL is intentionally not "pretty" because each record must be exactly one line.
+- If you type an output name without an extension (e.g., "agent_ready"), the script will create it *without* extension.
 """
 
 from __future__ import annotations
@@ -25,17 +27,124 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 KEY_RE = re.compile(r"^[A-Z][A-Z0-9]+-\d+$")
 
 
-# ----------------------------
-# Terminal UI (colors + banner)
-# ----------------------------
+I18N: dict[str, dict[str, str]] = {
+    "en": {
+        "header.title": "JIRA XML ➜ JSONL (Agent-ready)",
+        "header.subtitle": "Converts Jira RSS XML exports into JSONL (1 issue per line), cleaned for search (RAG/embeddings).",
+        "header.tip": "Tip: you can paste paths with quotes, or drag & drop a folder into the terminal.",
+        "b1": "Strips HTML from description/comments (clean text)",
+        "b2": "1 issue per line (JSONL) = great for indexing",
+        "b3": "Optional: include customfields and/or raw_item_xml",
+        "b4": "Beautify outputs an extra .pretty.json (indented) for reading",
+        "p.example": "Example",
+        "p.default": "Default",
+        "p.enter": "Enter a value (or press Enter to use default)",
+        "p.input.title": "1) Input folder (where the XML files are)",
+        "p.input.howto": "Paste the folder path. It can be relative (./exports) or absolute.",
+        "p.input.example": "./exports  or  /Users/you/Downloads/exports",
+        "p.output.title": "2) Output file (JSONL)",
+        "p.output.howto": "Enter path + filename. If you type 'agent_ready' it creates WITHOUT extension. If you type 'agent_ready.jsonl' it creates with extension.",
+        "p.output.example": "./out/agent_ready.jsonl  or  ./out/agent_ready",
+        "p.rec.title": "3) Search subfolders too?",
+        "p.rec.howto": "Enable if your exports are split across nested folders.",
+        "p.sort.title": "4) Sort files by name before processing?",
+        "p.sort.howto": "Helps produce stable, repeatable output.",
+        "p.cf.title": "5) Include customfields?",
+        "p.cf.howto": "Recommended for retrieval, but can increase file size a lot.",
+        "p.raw.title": "6) Include raw_item_xml (the <item> XML)?",
+        "p.raw.howto": "Only if you want fully lossless storage. This can get very large.",
+        "p.beautify.title": "7) Beautify?",
+        "p.beautify.howto": "Generates an extra .pretty.json (indented) for reading/debug. JSONL stays 1 line per issue.",
+        "p.ff.title": "8) Stop on first error?",
+        "p.ff.howto": "If disabled, the script skips problematic files and continues.",
+        "ui.processing": "Processing...",
+        "ui.files_found": "Files found",
+        "ui.no_xml": "No *.xml files found in this folder (or subfolders).",
+        "ui.done": "✅ Done!",
+        "ui.summary": "Summary",
+        "ui.xml_read": "XML files scanned",
+        "ui.issues_written": "Issues written",
+        "ui.output_jsonl": "JSONL",
+        "ui.output_pretty": "Pretty JSON",
+        "ui.errors": "Errors occurred",
+        "ui.try_again": "Try again.",
+        "ui.must_be_folder": "Must be a valid folder.",
+        "ui.path_not_exist": "Path does not exist.",
+        "ui.answer_sn": "Answer with y/n.",
+        "ui.invalid_rss": "XML is not RSS",
+    },
+    "pt-BR": {
+        "header.title": "JIRA XML ➜ JSONL (Agent-ready)",
+        "header.subtitle": "Converte exports XML (RSS) do Jira em JSONL (1 issue por linha), limpo pra busca (RAG/embeddings).",
+        "header.tip": "Dica: você pode colar caminhos com aspas, ou arrastar e soltar uma pasta no terminal.",
+        "b1": "Remove HTML de description/comments (texto limpo)",
+        "b2": "1 issue por linha (JSONL) = ótimo para indexação",
+        "b3": "Opcional: incluir customfields e/ou raw_item_xml",
+        "b4": "Beautify gera um .pretty.json (indentado) para leitura",
+        "p.example": "Exemplo",
+        "p.default": "Padrão",
+        "p.enter": "Digite o valor (ou Enter para usar o padrão)",
+        "p.input.title": "1) Pasta de entrada (onde estão os XMLs)",
+        "p.input.howto": "Cole o caminho da pasta. Pode ser relativo (./exports) ou absoluto.",
+        "p.input.example": "./exports  ou  C:\\Users\\voce\\Downloads\\exports",
+        "p.output.title": "2) Arquivo de saída (JSONL)",
+        "p.output.howto": "Informe caminho + nome do arquivo. Se digitar 'agent_ready' ele cria SEM extensão. Se digitar 'agent_ready.jsonl' cria com extensão.",
+        "p.output.example": "./out/agent_ready.jsonl  ou  ./out/agent_ready",
+        "p.rec.title": "3) Buscar também em subpastas?",
+        "p.rec.howto": "Ative se seus exports estiverem em subpastas.",
+        "p.sort.title": "4) Ordenar arquivos por nome antes de processar?",
+        "p.sort.howto": "Ajuda a ter saída estável/repetível.",
+        "p.cf.title": "5) Incluir customfields?",
+        "p.cf.howto": "Recomendado para busca, mas pode aumentar bastante o tamanho.",
+        "p.raw.title": "6) Incluir raw_item_xml (XML bruto do <item>)?",
+        "p.raw.howto": "Só se quiser lossless total. Pode ficar gigante.",
+        "p.beautify.title": "7) Beautify?",
+        "p.beautify.howto": "Gera também um .pretty.json (indentado) para leitura/debug. JSONL continua 1 linha por issue.",
+        "p.ff.title": "8) Parar no primeiro erro?",
+        "p.ff.howto": "Se desativar, ele pula arquivos problemáticos e segue.",
+        "ui.processing": "Processando...",
+        "ui.files_found": "Arquivos encontrados",
+        "ui.no_xml": "Não achei nenhum *.xml nessa pasta (ou subpastas).",
+        "ui.done": "✅ Concluído!",
+        "ui.summary": "Resumo",
+        "ui.xml_read": "XMLs lidos",
+        "ui.issues_written": "Issues geradas",
+        "ui.output_jsonl": "JSONL",
+        "ui.output_pretty": "Pretty JSON",
+        "ui.errors": "Ocorreram erros",
+        "ui.try_again": "Tenta de novo.",
+        "ui.must_be_folder": "Precisa ser uma pasta válida.",
+        "ui.path_not_exist": "Caminho não existe.",
+        "ui.answer_sn": "Responda com s/n.",
+        "ui.invalid_rss": "XML não é RSS",
+    },
+}
+
+
+def make_translator(lang: str) -> Callable[[str], str]:
+    lang = (lang or "").strip()
+    if lang not in I18N:
+        lang = "en"
+
+    def t(key: str, **kwargs: Any) -> str:
+        s = I18N.get(lang, {}).get(key) or I18N["en"].get(key) or key
+        try:
+            return s.format(**kwargs)
+        except Exception:
+            return s
+
+    return t
+
+
 class UI:
-    def __init__(self) -> None:
+    def __init__(self, t: Callable[[str], str]) -> None:
+        self.t = t
         self.use_color = sys.stdout.isatty() and os.getenv("NO_COLOR") is None
 
     def c(self, code: str) -> str:
@@ -73,50 +182,33 @@ class UI:
     def magenta(self) -> str:
         return self.c("35")
 
-    def line(self, text: str = "") -> None:
-        print(text)
+    def line(self, s: str = "") -> None:
+        print(s)
 
-    def info(self, text: str) -> None:
-        print(f"{self.cyan}{text}{self.reset}")
+    def info(self, s: str) -> None:
+        print(f"{self.cyan}{s}{self.reset}")
 
-    def ok(self, text: str) -> None:
-        print(f"{self.green}{text}{self.reset}")
+    def ok(self, s: str) -> None:
+        print(f"{self.green}{s}{self.reset}")
 
-    def warn(self, text: str) -> None:
-        print(f"{self.yellow}{text}{self.reset}")
+    def warn(self, s: str) -> None:
+        print(f"{self.yellow}{s}{self.reset}")
 
-    def err(self, text: str) -> None:
-        print(f"{self.red}{text}{self.reset}")
+    def err(self, s: str) -> None:
+        print(f"{self.red}{s}{self.reset}")
 
     def header(self) -> None:
-        title = "JIRA XML ➜ JSONL (Agent-ready)"
-        subtitle = (
-            "Converte uma pasta de exports XML (RSS) do Jira em JSONL (1 issue por linha), "
-            "limpo pra busca (RAG/embeddings)."
-        )
-        bullets = [
-            "✅ Remove HTML de description/comments (vira texto limpo)",
-            "✅ 1 issue por linha (JSONL) = ótimo para indexação",
-            "✅ Opção de incluir customfields e/ou raw_item_xml",
-            "✅ Beautify gera um .pretty.json (bonito) para leitura",
-        ]
-
-        bar = "═" * 72
-        print(f"{self.magenta}{bar}{self.reset}")
-        print(f"{self.bold}{self.magenta}  {title}{self.reset}")
-        print(f"{self.dim}  {subtitle}{self.reset}")
-        print()
-        for b in bullets:
-            print(f"  {self.green}•{self.reset} {b}")
-        print(f"{self.magenta}{bar}{self.reset}\n")
+        bar = "═" * 74
+        self.line(f"{self.magenta}{bar}{self.reset}")
+        self.line(f"{self.bold}{self.magenta}  {self.t('header.title')}{self.reset}")
+        self.line(f"{self.dim}  {self.t('header.subtitle')}{self.reset}")
+        self.line("")
+        for b in ("b1", "b2", "b3", "b4"):
+            self.line(f"  {self.green}•{self.reset} {self.t(b)}")
+        self.line(f"{self.magenta}{bar}{self.reset}")
+        self.line(f"{self.dim}{self.t('header.tip')}{self.reset}\n")
 
 
-ui = UI()
-
-
-# ----------------------------
-# HTML stripper
-# ----------------------------
 class _HTMLStripper(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -138,9 +230,6 @@ def strip_html(s: str | None) -> str:
     return re.sub(r"\s+", " ", p.get_text()).strip()
 
 
-# ----------------------------
-# XML helpers
-# ----------------------------
 def local_name(tag: str) -> str:
     if "}" in tag:
         tag = tag.split("}", 1)[1]
@@ -175,10 +264,10 @@ def find_text(parent: ET.Element, name: str) -> str:
     return text_of(find_child(parent, name))
 
 
-def parse_rss_items(xml_path: Path) -> list[ET.Element]:
+def parse_rss_items(xml_path: Path, t: Callable[[str], str]) -> list[ET.Element]:
     root = ET.parse(xml_path).getroot()
     if local_name(root.tag).lower() != "rss":
-        raise ValueError(f"XML não é RSS (root={root.tag})")
+        raise ValueError(f"{t('ui.invalid_rss')} (root={root.tag})")
 
     channel = None
     for ch in list(root):
@@ -187,7 +276,6 @@ def parse_rss_items(xml_path: Path) -> list[ET.Element]:
             break
     if channel is None:
         return []
-
     return [el for el in list(channel) if local_name(el.tag) == "item"]
 
 
@@ -368,8 +456,6 @@ def item_to_issue_dict(item: ET.Element, source_file: str, opts: Options) -> dic
     created = find_text(item, "created").strip()
     updated = find_text(item, "updated").strip()
 
-    description_text = strip_html(find_text(item, "description"))
-
     issue: dict[str, Any] = {
         "key": key,
         "type": issue_type,
@@ -384,7 +470,7 @@ def item_to_issue_dict(item: ET.Element, source_file: str, opts: Options) -> dic
         "project": extract_project(item),
         "parent": extract_parent_key(item),
         "subtasks": extract_subtasks(item),
-        "description_text": description_text,
+        "description_text": strip_html(find_text(item, "description")),
         "comments_text": extract_comments_text(item),
         "source_file": source_file,
     }
@@ -399,148 +485,85 @@ def item_to_issue_dict(item: ET.Element, source_file: str, opts: Options) -> dic
     return issue
 
 
-# ----------------------------
-# Interactive prompts (nice UX)
-# ----------------------------
 def normalize_user_path(s: str) -> Path:
-    s = s.strip()
+    s = (s or "").strip()
     if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
         s = s[1:-1]
     return Path(s).expanduser()
 
 
-def prompt_path(
-    title: str,
-    howto: str,
-    example: str,
-    default: str,
-    must_exist: bool = False,
-    must_be_dir: bool = False,
-) -> Path:
-    ui.info(f"{ui.bold}{title}{ui.reset}")
-    ui.line(f"{ui.dim}{howto}{ui.reset}")
-    ui.line(f"{ui.dim}Exemplo: {example}{ui.reset}")
-    ui.line(f"{ui.dim}Padrão: {default}{ui.reset}")
+def prompt_path(ui: UI, title_key: str, howto_key: str, example_key: str, default: str,
+                must_exist: bool, must_be_dir: bool) -> Path:
+    ui.info(f"{ui.bold}{ui.t(title_key)}{ui.reset}")
+    ui.line(f"{ui.dim}{ui.t(howto_key)}{ui.reset}")
+    ui.line(f"{ui.dim}{ui.t('p.example')}: {ui.t(example_key)}{ui.reset}")
+    ui.line(f"{ui.dim}{ui.t('p.default')}: {default}{ui.reset}")
+    ui.line(f"{ui.dim}{ui.t('p.enter')}{ui.reset}")
     while True:
-        s = input(f"> ").strip()
-        if not s:
-            p = normalize_user_path(default)
-        else:
-            p = normalize_user_path(s)
+        s = input("> ").strip()
+        p = normalize_user_path(s or default)
 
         if must_exist and not p.exists():
-            ui.warn("⚠️  Caminho não existe. Tenta de novo.")
+            ui.warn(f"⚠️  {ui.t('ui.path_not_exist')} {ui.t('ui.try_again')}")
             continue
         if must_be_dir and (not p.exists() or not p.is_dir()):
-            ui.warn("⚠️  Precisa ser uma pasta válida. Tenta de novo.")
+            ui.warn(f"⚠️  {ui.t('ui.must_be_folder')} {ui.t('ui.try_again')}")
             continue
         return p
 
 
-def prompt_bool(title: str, howto: str, default: bool) -> bool:
-    ui.info(f"{ui.bold}{title}{ui.reset}")
-    ui.line(f"{ui.dim}{howto}{ui.reset}")
-    d = "S/n" if default else "s/N"
+def prompt_bool(ui: UI, title_key: str, howto_key: str, default: bool) -> bool:
+    ui.info(f"{ui.bold}{ui.t(title_key)}{ui.reset}")
+    ui.line(f"{ui.dim}{ui.t(howto_key)}{ui.reset}")
+    d = "Y/n" if default else "y/N"
     while True:
-        s = input(f"( {d} ) > ").strip().lower()
+        s = input(f"({d}) > ").strip().lower()
         if not s:
             return default
-        if s in {"s", "sim", "y", "yes", "1", "true"}:
+        if s in {"y", "yes", "s", "sim", "true", "1"}:
             return True
-        if s in {"n", "nao", "não", "no", "0", "false"}:
+        if s in {"n", "no", "nao", "não", "false", "0"}:
             return False
-        ui.warn("⚠️  Responde com s/n (sim/não).")
+        ui.warn(f"⚠️  {ui.t('ui.answer_sn')}")
 
 
-def parse_args_or_prompt(argv: list[str] | None) -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description="Convert Jira RSS XML folder to agent-ready JSONL (1 issue per line).")
-    ap.add_argument("input_folder", type=Path, nargs="?", help="Pasta com *.xml (Jira RSS exports)")
-    ap.add_argument("output_jsonl", type=Path, nargs="?", help="Arquivo JSONL de saída")
-    ap.add_argument("--recursive", action="store_true", help="Buscar em subpastas")
-    ap.add_argument("--sort", action="store_true", help="Ordenar arquivos por nome")
-    ap.add_argument("--include-customfields", action="store_true", help="Incluir customfields no JSON")
-    ap.add_argument("--include-raw-item-xml", action="store_true", help="Incluir raw_item_xml (fica grande)")
-    ap.add_argument("--beautify", action="store_true", help="Gerar também <output>.pretty.json (indentado)")
-    ap.add_argument("--fail-fast", action="store_true", help="Parar no primeiro erro de parse")
+    ap.add_argument("input_folder", type=Path, nargs="?", help="Folder with *.xml (Jira RSS exports)")
+    ap.add_argument("output_jsonl", type=Path, nargs="?", help="Output JSONL file (no extension is allowed)")
+    ap.add_argument("--lang", choices=sorted(I18N.keys()), default="pt-BR", help="UI language")
+    ap.add_argument("--recursive", action="store_true", help="Search subfolders too")
+    ap.add_argument("--sort", action="store_true", help="Sort files by name before processing")
+    ap.add_argument("--include-customfields", action="store_true", help="Include customfields in JSON")
+    ap.add_argument("--include-raw-item-xml", action="store_true", help="Include raw_item_xml (can be large)")
+    ap.add_argument("--beautify", action="store_true", help="Also write <output>.pretty.json (indented array)")
+    ap.add_argument("--fail-fast", action="store_true", help="Stop on first parsing error")
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = build_parser()
     args = ap.parse_args(argv)
+
+    t = make_translator(args.lang)
+    ui = UI(t)
 
     if args.input_folder is None or args.output_jsonl is None:
         ui.header()
-        ui.line(f"{ui.dim}Dica: você pode colar caminhos com aspas ou arrastar e soltar no terminal.{ui.reset}\n")
+        args.input_folder = prompt_path(ui, "p.input.title", "p.input.howto", "p.input.example", "./exports", True, True)
+        args.output_jsonl = prompt_path(ui, "p.output.title", "p.output.howto", "p.output.example", "./agent_ready.jsonl", False, False)
+        args.recursive = prompt_bool(ui, "p.rec.title", "p.rec.howto", True)
+        args.sort = prompt_bool(ui, "p.sort.title", "p.sort.howto", True)
+        args.include_customfields = prompt_bool(ui, "p.cf.title", "p.cf.howto", True)
+        args.include_raw_item_xml = prompt_bool(ui, "p.raw.title", "p.raw.howto", False)
+        args.beautify = prompt_bool(ui, "p.beautify.title", "p.beautify.howto", True)
+        args.fail_fast = prompt_bool(ui, "p.ff.title", "p.ff.howto", False)
 
-        args.input_folder = prompt_path(
-            title="1) Pasta de entrada (onde estão os XMLs)",
-            howto="Cole o caminho da pasta. Pode ser relativo (./exports) ou absoluto.",
-            example="./exports   ou   C:\\\\Users\\\\voce\\\\Downloads\\\\exports",
-            default="./exports",
-            must_exist=True,
-            must_be_dir=True,
-        )
-
-        args.output_jsonl = prompt_path(
-            title="2) Arquivo de saída (JSONL)",
-            howto=(
-                "Informe o caminho + nome do arquivo.\n"
-                "- Se você digitar 'agent_ready.jsonl' → cria com extensão.\n"
-                "- Se você digitar só 'agent_ready' → cria SEM extensão (do jeito que você pediu).\n"
-                "Dica: pode colocar numa pasta também (ex.: ./out/agent_ready.jsonl)."
-            ),
-            example="./out/agent_ready.jsonl   ou   ./out/agent_ready",
-            default="./agent_ready.jsonl",
-            must_exist=False,
-            must_be_dir=False,
-        )
-
-        args.recursive = prompt_bool(
-            title="3) Buscar também em subpastas?",
-            howto="Se sua pasta tiver subpastas com XML, ative isso.",
-            default=True,
-        )
-
-        args.sort = prompt_bool(
-            title="4) Ordenar arquivos por nome antes de processar?",
-            howto="Ajuda a ter saída estável/repetível.",
-            default=True,
-        )
-
-        args.include_customfields = prompt_bool(
-            title="5) Incluir customfields no JSON?",
-            howto="Recomendado para busca. Pode aumentar bastante o tamanho.",
-            default=True,
-        )
-
-        args.include_raw_item_xml = prompt_bool(
-            title="6) Incluir raw_item_xml (XML bruto do <item>)?",
-            howto="Só se você quiser lossless total. Fica bem maior.",
-            default=False,
-        )
-
-        args.beautify = prompt_bool(
-            title="7) Beautify?",
-            howto="Gera também um arquivo .pretty.json (indentado) só pra leitura/debug. O JSONL continua 1 linha por issue.",
-            default=True,
-        )
-
-        args.fail_fast = prompt_bool(
-            title="8) Parar no primeiro erro?",
-            howto="Se desativar, ele pula arquivos problemáticos e segue.",
-            default=False,
-        )
-
-    return args
-
-
-# ----------------------------
-# Main
-# ----------------------------
-def main(argv: list[str] | None = None) -> int:
-    args = parse_args_or_prompt(argv)
-
-    input_folder: Path = Path(args.input_folder).expanduser()
-    output_jsonl: Path = Path(args.output_jsonl).expanduser()
+    input_folder = Path(args.input_folder).expanduser()
+    output_jsonl = Path(args.output_jsonl).expanduser()
 
     if not input_folder.exists() or not input_folder.is_dir():
-        ui.err(f"ERRO: input_folder não é uma pasta válida: {input_folder}")
+        ui.err(f"{t('ui.must_be_folder')}: {input_folder}")
         return 2
 
     files = iter_xml_files(input_folder, args.recursive)
@@ -548,26 +571,21 @@ def main(argv: list[str] | None = None) -> int:
         files.sort(key=lambda p: str(p).lower())
 
     if not files:
-        ui.warn("⚠️  Não achei nenhum *.xml nessa pasta (ou subpastas).")
-        ui.warn("Verifica se os arquivos terminam com .xml e se a pasta está correta.")
+        ui.warn(t("ui.no_xml"))
         return 2
 
     output_jsonl.parent.mkdir(parents=True, exist_ok=True)
-
-    opts = Options(
-        include_customfields=bool(args.include_customfields),
-        include_raw_item_xml=bool(args.include_raw_item_xml),
-    )
+    opts = Options(bool(args.include_customfields), bool(args.include_raw_item_xml))
 
     issues_by_key: dict[str, dict[str, Any]] = {}
     errors: list[tuple[Path, str]] = []
 
-    ui.line(f"{ui.bold}Processando...{ui.reset}")
-    ui.line(f"{ui.dim}Arquivos encontrados: {len(files)}{ui.reset}\n")
+    ui.line(f"{ui.bold}{t('ui.processing')}{ui.reset}")
+    ui.line(f"{ui.dim}{t('ui.files_found')}: {len(files)}{ui.reset}\n")
 
     for f in files:
         try:
-            for item in parse_rss_items(f):
+            for item in parse_rss_items(f, t):
                 issue = item_to_issue_dict(item, source_file=f.name, opts=opts)
                 if issue is None:
                     continue
@@ -581,31 +599,28 @@ def main(argv: list[str] | None = None) -> int:
                 break
 
     ordered = [issues_by_key[k] for k in sorted(issues_by_key.keys())]
-
-    # Always write JSONL
     with output_jsonl.open("w", encoding="utf-8") as out:
         for obj in ordered:
             out.write(json.dumps(obj, ensure_ascii=False) + "\n")
 
-    ui.ok("✅ Concluído!")
-    ui.line(f"{ui.bold}Resumo{ui.reset}")
-    ui.line(f"  • XMLs lidos:      {len(files)}")
-    ui.line(f"  • Issues geradas:  {len(ordered)}")
-    ui.line(f"  • JSONL:           {output_jsonl.resolve()}")
+    ui.ok(t("ui.done"))
+    ui.line(f"{ui.bold}{t('ui.summary')}{ui.reset}")
+    ui.line(f"  • {t('ui.xml_read')}: {len(files)}")
+    ui.line(f"  • {t('ui.issues_written')}: {len(ordered)}")
+    ui.line(f"  • {t('ui.output_jsonl')}: {output_jsonl.resolve()}")
 
-    # Optional Beautify -> pretty JSON array
     if args.beautify:
         pretty_path = output_jsonl.with_suffix(".pretty.json")
         with pretty_path.open("w", encoding="utf-8") as f:
             json.dump(ordered, f, ensure_ascii=False, indent=2)
-        ui.line(f"  • Pretty JSON:     {pretty_path.resolve()}")
+        ui.line(f"  • {t('ui.output_pretty')}: {pretty_path.resolve()}")
 
     if errors:
-        ui.warn(f"\n⚠️  Ocorreram {len(errors)} erro(s):")
+        ui.warn(f"\n⚠️  {t('ui.errors')}: {len(errors)}")
         for p, msg in errors[:15]:
             ui.warn(f"  - {p.name}: {msg}")
         if len(errors) > 15:
-            ui.warn(f"  ... e mais {len(errors) - 15} erro(s).")
+            ui.warn(f"  ... +{len(errors) - 15}")
         return 1
 
     return 0
