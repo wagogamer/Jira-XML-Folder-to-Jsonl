@@ -63,3 +63,14 @@ It will ask:
 python jira_xml_folder_to_jsonl.py <INPUT_FOLDER> <OUTPUT_JSONL> [options]
 ```
 
+`description`
+
+Options:
+
+- `--lang en|pt-BR` — interface language
+- `--recursive` — scan subfolders for *.xml
+- `--sort` — sort filenames (stable output)
+- `--include-customfields` — include all Jira custom fields
+- `--include-raw-item-xml` — store raw <item>...</item> XML (lossless, bigger)
+- `--beautify` — generate <output>.pretty.json (readable/debug)
+- `--fail-fast` — stop at first parsing error
