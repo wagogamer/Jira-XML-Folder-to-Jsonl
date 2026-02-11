@@ -1,54 +1,39 @@
-# Jira XML ➜ Agent-Ready JSONL
+# Jira XML Folder ➜ Agent-Ready JSONL (EN)
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](#requirements)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](#license)
+[![License](https://img.shields.io/badge/License-MPL--2.0-green.svg)](#license)
 [![CLI](https://img.shields.io/badge/CLI-Interactive%20%2B%20Flags-purple.svg)](#usage)
 [![i18n](https://img.shields.io/badge/i18n-en%20%7C%20pt--BR-orange.svg)](#language--i18n)
 
-Converte uma pasta de **exports XML (RSS) do Jira** em **JSONL (1 issue por linha)**, **limpo pra busca** (RAG/embeddings), ideal para alimentar um **AI Agent**.
+Convert a folder of **Jira RSS XML exports** into **JSONL (1 issue per line)**, cleaned for search (RAG/embeddings). Perfect for feeding an AI agent with product/epic/story context.
 
-✅ Remove HTML de `description` e `comments` (vira texto “clean”)  
-✅ Gera campo `text` com âncoras (`KEY`, `TYPE`, `SUMMARY`, etc.) pronto pra retrieval  
-✅ Opções: incluir `customfields` e/ou `raw_item_xml` (lossless)  
-✅ Interface bonita no terminal + **modo interativo**  
-✅ **Idiomas separados** em `i18n/en.json` e `i18n/pt-BR.json` (fallback automático)
-
----
-
-## Output (o que você recebe)
-
-Você recebe um arquivo `.jsonl` onde **cada linha é um JSON** representando **uma issue**:
-
-- `key`, `type`, `summary`, `status`, `priority`, `assignee`, `reporter`
-- `created`, `updated`
-- `project`
-- `parent`, `subtasks` (quando existir)
-- `description_text` (HTML removido)
-- `comments_text` (HTML removido)
-- `customfields` (opcional)
-- `raw_item_xml` (opcional)
-- `text` (campo principal para busca/embeddings)
-
-> **JSONL não é “pretty” por definição**: é 1 JSON por linha para ingestão eficiente.
-
-Opcionalmente, com `--beautify`, você ganha também um arquivo adicional:
-- `<output>.pretty.json` (array JSON indentado, só para leitura/debug)
+- ✅ Parses Jira **RSS XML** (`<rss><channel><item>...</item></channel></rss>`)
+- ✅ Strips HTML from `description` and `comments` (clean text)
+- ✅ Generates a search-ready `text` field (KEY/TYPE/SUMMARY/… anchors)
+- ✅ Optional: include `customfields`
+- ✅ Optional: include `raw_item_xml` (lossless, larger output)
+- ✅ Interactive CLI + flags
+- ✅ UI language: **en** / **pt-BR** (strings in `en.json` + `pt-BR.json`)
 
 ---
 
 ## Requirements
 
 - Python **3.10+**
-- Sem dependências externas (usa apenas stdlib)
+- No external dependencies (stdlib only)
 
 ---
 
-## Instalação
-
-Clone o repo e rode direto:
+## Quickstart
 
 ```bash
-git clone <SEU_REPO_AQUI>
-cd <SEU_REPO_AQUI>
+git clone https://github.com/wagogamer/Jira-XML-Folder-to-Jsonl.git
+cd Jira-XML-Folder-to-Jsonl
 python3 jira_xml_folder_to_jsonl.py
 
+**Run with flahs**
+
+```python
+python3 jira_xml_folder_to_jsonl.py ./exports agent_ready.jsonl \
+  --recursive --sort --include-customfields --beautify --lang en
+}
