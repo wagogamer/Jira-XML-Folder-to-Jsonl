@@ -30,8 +30,9 @@ Convert a folder of **Jira RSS XML exports** into **JSONL (1 issue per line)**, 
 git clone https://github.com/wagogamer/Jira-XML-Folder-to-Jsonl.git
 cd Jira-XML-Folder-to-Jsonl
 python3 jira_xml_folder_to_jsonl.py
+```
 
-**Run with flahs**
+**Run with flags**
 
 ```python
 python3 jira_xml_folder_to_jsonl.py ./exports agent_ready.jsonl \
