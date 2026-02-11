@@ -4,12 +4,17 @@
 """
 Convert Jira RSS XML exports in a folder to agent-ready JSONL (1 issue per line), cleaned for search.
 
+Beautify option:
+- Always writes JSONL (best for ingestion).
+- If --beautify is enabled, also writes a pretty JSON array file:
+    <output>.pretty.json
+
 Modes:
 - CLI mode: provide args normally.
 - Interactive mode: run with no args and it will prompt for inputs.
 
 Examples:
-  python3 jira_xml_folder_to_jsonl.py ./exports agent_ready.jsonl --recursive --sort --include-customfields
+  python3 jira_xml_folder_to_jsonl.py ./exports agent_ready.jsonl --recursive --sort --include-customfields --beautify
   python3 jira_xml_folder_to_jsonl.py   # interactive prompts
 """
 
@@ -277,8 +282,7 @@ def item_to_issue_dict(item: ET.Element, source_file: str, opts: Options) -> dic
     created = find_text(item, "created").strip()
     updated = find_text(item, "updated").strip()
 
-    description_html = find_text(item, "description")
-    description_text = strip_html(description_html)
+    description_text = strip_html(find_text(item, "description"))
 
     issue: dict[str, Any] = {
         "key": key,
@@ -309,15 +313,12 @@ def item_to_issue_dict(item: ET.Element, source_file: str, opts: Options) -> dic
     return issue
 
 
-def _prompt_path(prompt: str, default: str | None = None) -> Path:
-    suffix = f" [{default}]" if default else ""
-    s = input(f"{prompt}{suffix}: ").strip()
-    if not s and default:
-        s = default
-    return Path(s).expanduser()
+def _prompt_path(prompt: str, default: str) -> Path:
+    s = input(f"{prompt} [{default}]: ").strip()
+    return Path((s or default)).expanduser()
 
 
-def _prompt_bool(prompt: str, default: bool = False) -> bool:
+def _prompt_bool(prompt: str, default: bool) -> bool:
     d = "Y/n" if default else "y/N"
     s = input(f"{prompt} ({d}): ").strip().lower()
     if not s:
@@ -331,20 +332,21 @@ def parse_args_or_prompt(argv: list[str] | None) -> argparse.Namespace:
     ap.add_argument("output_jsonl", type=Path, nargs="?", help="Arquivo JSONL de saída")
     ap.add_argument("--recursive", action="store_true", help="Buscar em subpastas")
     ap.add_argument("--sort", action="store_true", help="Ordenar arquivos por nome")
-    ap.add_argument("--include-customfields", action="store_true", help="Incluir todos customfields no JSON")
-    ap.add_argument("--include-raw-item-xml", action="store_true", help="Incluir XML bruto do <item> (pode ficar grande)")
+    ap.add_argument("--include-customfields", action="store_true", help="Incluir customfields no JSON")
+    ap.add_argument("--include-raw-item-xml", action="store_true", help="Incluir raw_item_xml (fica grande)")
+    ap.add_argument("--beautify", action="store_true", help="Gerar também <output>.pretty.json (indentado)")
     ap.add_argument("--fail-fast", action="store_true", help="Parar no primeiro erro de parse")
-
     args = ap.parse_args(argv)
 
     if args.input_folder is None or args.output_jsonl is None:
-        print("\nModo interativo (sem argumentos). Preencha os caminhos:\n")
+        print("\nModo interativo:\n")
         args.input_folder = _prompt_path("Pasta de entrada (XMLs)", "./exports")
         args.output_jsonl = _prompt_path("Arquivo JSONL de saída", "./agent_ready.jsonl")
         args.recursive = _prompt_bool("Buscar subpastas?", True)
         args.sort = _prompt_bool("Ordenar arquivos por nome?", True)
         args.include_customfields = _prompt_bool("Incluir customfields?", True)
         args.include_raw_item_xml = _prompt_bool("Incluir raw_item_xml? (fica grande)", False)
+        args.beautify = _prompt_bool("Beautify (gerar .pretty.json)?", True)
         args.fail_fast = _prompt_bool("Parar no primeiro erro?", False)
 
     return args
@@ -387,14 +389,24 @@ def main(argv: list[str] | None = None) -> int:
             if args.fail_fast:
                 break
 
+    # Always JSONL
     output_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    ordered = [issues_by_key[k] for k in sorted(issues_by_key.keys())]
+
     with output_jsonl.open("w", encoding="utf-8") as out:
-        for k in sorted(issues_by_key.keys()):
-            out.write(json.dumps(issues_by_key[k], ensure_ascii=False) + "\n")
+        for obj in ordered:
+            out.write(json.dumps(obj, ensure_ascii=False) + "\n")
 
     print(f"\nArquivos lidos:   {len(files)}")
-    print(f"Issues escritas: {len(issues_by_key)}")
-    print(f"Saída:          {output_jsonl.resolve()}")
+    print(f"Issues escritas: {len(ordered)}")
+    print(f"JSONL:           {output_jsonl.resolve()}")
+
+    # Optional Beautify
+    if args.beautify:
+        pretty_path = output_jsonl.with_suffix(".pretty.json")
+        with pretty_path.open("w", encoding="utf-8") as f:
+            json.dump(ordered, f, ensure_ascii=False, indent=2)
+        print(f"Pretty JSON:     {pretty_path.resolve()}")
 
     if errors:
         print(f"\nOcorreram {len(errors)} erro(s):", file=sys.stderr)
