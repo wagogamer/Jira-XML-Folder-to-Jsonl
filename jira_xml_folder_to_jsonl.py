@@ -6,7 +6,7 @@ Jira RSS XML folder -> Agent-ready JSONL (1 issue per line), cleaned for search.
 
 Features
 - Beautiful colored terminal UI (auto-disables if not a TTY or NO_COLOR is set).
-- i18n: English (en) and Portuguese (pt-BR) built into this script.
+- i18n: English (en) and Portuguese (pt-BR) via external JSON files.
 - Interactive mode: run without positional args and it will prompt for everything.
 - CLI mode: pass args normally.
 - Output rule: if you type an output filename WITHOUT extension (e.g. "agent_ready"),
@@ -42,16 +42,36 @@ KEY_RE = re.compile(r"^[A-Z][A-Z0-9]+-\d+$")
 # ----------------------------
 
 def load_i18n(base_dir: Path) -> dict[str, dict[str, str]]:
-    """Loads i18n JSON files from ./i18n next to this script.
+    """Load i18n JSON files.
 
-    Expected files:
-      - i18n/en.json
-      - i18n/pt-BR.json
+    Supported layouts:
+      A) <script_dir>/i18n/en.json, <script_dir>/i18n/pt-BR.json, ...
+      B) <script_dir>/en.json, <script_dir>/pt-BR.json, ... (legacy/fallback)
+
+    If nothing is found, returns an empty dict and the UI will fall back to keys.
     """
-    i18n_dir = base_dir / "i18n"
     data: dict[str, dict[str, str]] = {}
-    if not i18n_dir.exists():
-        return data
+
+    def _try_load(p: Path) -> None:
+        try:
+            lang = p.stem  # "en", "pt-BR"
+            data[lang] = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            return
+
+    # Layout A: ./i18n/*.json
+    i18n_dir = base_dir / "i18n"
+    if i18n_dir.exists():
+        for p in i18n_dir.glob("*.json"):
+            _try_load(p)
+
+    # Layout B: ./en.json and ./pt-BR.json (fallback)
+    for lang in ("en", "pt-BR"):
+        p = base_dir / f"{lang}.json"
+        if p.exists() and lang not in data:
+            _try_load(p)
+
+    return data
 
     for p in i18n_dir.glob("*.json"):
         try:
@@ -499,6 +519,9 @@ def parse_args_or_prompt(argv: list[str] | None) -> argparse.Namespace:
 
     base_dir = Path(__file__).resolve().parent
     i18n = load_i18n(base_dir)
+
+    if not i18n:
+        ui.warn("⚠️  i18n files not found. Expected ./i18n/en.json (or ./en.json). Falling back to keys.")
 
     # Interactive: ask language first (unless provided via --lang)
     if (args.input_folder is None or args.output_jsonl is None) and not args.lang:
