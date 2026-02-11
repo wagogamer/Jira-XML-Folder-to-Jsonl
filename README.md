@@ -103,18 +103,18 @@ When the script asks for the output file:
 
 ## Project structure
 
-´´´
+```
 .<br>
 ├── jira_xml_folder_to_jsonl.py<br>
 ├── en.json<br>
 ├── pt-BR.json<br>
 ├── README.md<br>
 └── LICENSE<br>
-´´´
+```
 
 ## Input XML format
 
-´´´ xml
+``` xml
 <rss>
   <channel>
     <item>
@@ -125,7 +125,7 @@ When the script asks for the output file:
     </item>
   </channel>
 </rss>
-´´´
+```
 
 ## RAG / AI Agent tips
 
