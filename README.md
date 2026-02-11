@@ -15,14 +15,14 @@ Convert a folder of **Jira RSS XML exports** into **JSONL (1 issue per line)**, 
 - ✅ Interactive CLI + flags
 - ✅ UI language: **en** / **pt-BR** (strings in `en.json` + `pt-BR.json`)
 
----
+
 
 ## Requirements
 
 - Python **3.10+**
 - No external dependencies (stdlib only)
 
----
+
 
 ## Quickstart
 
@@ -38,8 +38,6 @@ python3 jira_xml_folder_to_jsonl.py
 python jira_xml_folder_to_jsonl.py ./exports agent_ready.jsonl \
   --recursive --sort --include-customfields --beautify --lang en
 ```
-
----
 
 ## Usage
 
@@ -58,3 +56,10 @@ It will ask:
 - Options: recursive, sort, customfields, raw XML, beautify
 
 > Tip: you can paste paths with quotes or drag & drop folders into the terminal.
+
+## CLI mode (flags)
+
+```python
+python jira_xml_folder_to_jsonl.py <INPUT_FOLDER> <OUTPUT_JSONL> [options]
+```
+
