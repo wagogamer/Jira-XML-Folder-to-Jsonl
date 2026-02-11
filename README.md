@@ -74,3 +74,22 @@ Options:
 - `--include-raw-item-xml` — store raw <item>...</item> XML (lossless, bigger)
 - `--beautify` — generate <output>.pretty.json (readable/debug)
 - `--fail-fast` — stop at first parsing error
+
+## Output format
+
+Main output is JSONL: one JSON object per line, one issue per object.
+
+Common fields:
+
+- `key`, `type`, `summary`, `title`
+- `status`, `priority`, `assignee`, `reporter`
+- `created`, `updated`
+- `project` (id/key/name when available)
+- `parent`, `subtasks`
+- `description_text` (HTML stripped)
+- `comments_text` (HTML stripped)
+- `customfields` (optional)
+- `raw_item_xml` (optional)
+- `text` (main field for search/embeddings)
+
+> JSONL is not “pretty” by design. Use --beautify to also get a readable .pretty.json.
